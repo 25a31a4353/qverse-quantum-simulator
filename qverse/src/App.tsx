@@ -56,8 +56,27 @@ export default function App() {
         </div>
       </div>
 
-      <div className="md:col-span-4 self-start sticky top-6">
+      <div className="md:col-span-4 self-start sticky top-6 flex flex-col gap-6">
         <AIAssistant />
+        
+        <div className="glass-panel p-4 bg-gray-900/60 border-t-2 border-purple-500/30">
+          <h4 className="text-[10px] uppercase tracking-[0.2em] text-gray-400 mb-3 font-bold">Project Team</h4>
+          <div className="space-y-2">
+            <div className="flex flex-col">
+              <span className="text-[9px] text-purple-400 font-bold uppercase">Team Lead</span>
+              <span className="text-sm text-gray-200 font-medium">Medicharla Shanmukheswar</span>
+            </div>
+            <div className="h-[1px] bg-gray-800 w-full my-1" />
+            <div className="flex flex-col">
+              <span className="text-[9px] text-cyan-400 font-bold uppercase">Researchers</span>
+              <ul className="text-xs text-gray-400 space-y-1 mt-1">
+                <li>Penumatsa Bala Chandrika</li>
+                <li>Sri Sai Sritha Bhupathiraju</li>
+                <li>Sripati Venkata Satya Mohith</li>
+              </ul>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
