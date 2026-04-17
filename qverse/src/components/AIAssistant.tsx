@@ -1,20 +1,48 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuantumStore } from '../store/quantumStore';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Zap, Brain, Info, History } from 'lucide-react';
+import { Send, Zap, Brain, Info, History, Sparkles } from 'lucide-react';
+import { getAIResponse, ChatMessage, AIContext } from '../services/aiService';
 
 type Message = { role: 'user' | 'assistant'; text: string; timestamp: Date };
+
+/**
+ * Helper to highlight quantum keywords in responses
+ */
+const QuantumText = ({ text }: { text: string }) => {
+  const terms = [
+    '|0⟩', '|1⟩', '|00⟩', '|01⟩', '|10⟩', '|11⟩', 'ψ', 'alpha', 'beta',
+    'superposition', 'entanglement', 'Bell State', 'Bloch Sphere', 'Hadamard', 'CNOT', 'Pauli-X',
+    'measurement', 'collapsed', 'wavefunction', 'probability', 'qubit', 'quantum'
+  ];
+  
+  // Escape special regex characters like |
+  const escapedTerms = terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const regex = new RegExp(`(${escapedTerms.join('|')})`, 'gi');
+  const parts = text.split(regex);
+
+  return (
+    <span>
+      {parts.map((part, i) => (
+        terms.some(t => t.toLowerCase() === part.toLowerCase()) 
+          ? <span key={i} className="text-cyan-400 font-bold drop-shadow-[0_0_8px_rgba(34,211,238,0.4)]">{part}</span>
+          : part
+      ))}
+    </span>
+  );
+};
 
 export default function AIAssistant() {
   const amplitudes           = useQuantumStore(s => s.amplitudes);
   const circuitSteps         = useQuantumStore(s => s.circuitSteps);
   const entanglementStrength = useQuantumStore(s => s.entanglementStrength);
   const isMeasured           = useQuantumStore(s => s.isMeasured);
+  const probabilities        = useQuantumStore(s => s.probabilities);
 
   const [messages, setMessages] = useState<Message[]>([
     { 
       role: 'assistant', 
-      text: "Greetings. I am your Quantum Analysis Unit. My sensors are calibrated to your circuit's state vector. How can I assist your research today?", 
+      text: "Hello! I am your Advanced Quantum Tutor. I'm connected to your live simulator state. How can I help you explore the quantum realm today?", 
       timestamp: new Date() 
     }
   ]);
@@ -22,94 +50,40 @@ export default function AIAssistant() {
   const [isTyping, setIsTyping] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Dynamic context for the "AI's Brain"
-  const currentContext = useMemo(() => {
-    const lastGate = circuitSteps.length > 0 ? circuitSteps[circuitSteps.length - 1] : null;
-    const isBellState = entanglementStrength > 90;
-    const hasSuperposition = amplitudes.some(a => Math.abs(a) > 0.1 && Math.abs(a) < 0.9);
-    
-    return {
-      stepCount: circuitSteps.length,
-      lastAction: lastGate ? (lastGate.type === 'CNOT' ? `CNOT (Q${lastGate.control}→Q${lastGate.target})` : `${lastGate.type} on Q${lastGate.qubit}`) : 'Initialization',
-      entanglement: entanglementStrength,
-      isBellState,
-      hasSuperposition,
-      isCollapsed: isMeasured,
-      stateVector: amplitudes.map(a => a.toFixed(3))
-    };
-  }, [circuitSteps, entanglementStrength, amplitudes, isMeasured]);
+  // Maintain chat history for LLM (limited to last 10 messages for efficiency)
+  const history = useMemo(() => {
+    return messages.map(m => ({
+      role: m.role === 'user' ? 'user' : 'assistant',
+      content: m.text
+    } as ChatMessage)).slice(-10);
+  }, [messages]);
 
+  // Gather current context
+  const getContext = (): AIContext => {
+    const lastGate = circuitSteps.length > 0 ? circuitSteps[circuitSteps.length - 1] : null;
+    let lastOp = 'None';
+    if (lastGate) {
+      lastOp = lastGate.type === 'CNOT' 
+        ? `CNOT (Control: Q${lastGate.control}, Target: Q${lastGate.target})`
+        : `${lastGate.type} Gate on Q${lastGate.qubit}`;
+    }
+
+    return {
+      stateVector: amplitudes.map(a => a.toFixed(3)),
+      probabilities: Array.from(probabilities),
+      circuitSteps: circuitSteps.map(s => s.type),
+      lastOperation: lastOp,
+      entanglement: entanglementStrength,
+      isMeasured: isMeasured
+    };
+  };
+
+  // Auto-scroll logic
   useEffect(() => {
     if (scrollRef.current) {
         scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
     }
   }, [messages, isTyping]);
-
-  const generateAIResponse = async (query: string): Promise<string> => {
-    const q = query.toLowerCase();
-    
-    // 1. Context Analysis Requests
-    if (q.includes('analyze') || q.includes('current') || q.includes('circuit') || q.includes('doing') || q.includes('happening')) {
-      let analysis = `Current Circuit Analysis: You have executed ${currentContext.stepCount} operations. `;
-      
-      if (currentContext.isCollapsed) {
-        analysis += "The system has been measured, collapsing the wavefunction to a definite state. All coherence is lost.";
-      } else {
-        analysis += `The system is in a ${currentContext.hasSuperposition ? 'superposition' : 'basis'} state. `;
-        if (currentContext.entanglement > 0) {
-          analysis += `I detect ${currentContext.entanglement}% quantum entanglement. ${currentContext.isBellState ? "This is a maximally entangled Bell State—Alice and Bob are perfectly linked!" : "The qubits are partially correlated."}`;
-        } else {
-          analysis += "No entanglement is currently present. Qubits are acting as independent entities.";
-        }
-      }
-      return analysis;
-    }
-
-    if (q.includes('entangle') && (q.includes('how') || q.includes('create') || q.includes('100%'))) {
-      return "To reach 100% entanglement (a Bell State), you must: 1. Apply a Hadamard gate to Q0 to create superposition. 2. Apply a CNOT gate with Q0 as control and Q1 as target. This links their probabilities into a single shared state!";
-    }
-
-    if (q.includes('wave') || q.includes('particle') || q.includes('duality')) {
-      return "Wave-particle duality is the core of quantum mechanics. Particles behave like waves (superposition) until they are observed (measurement). In our lab, the amplitudes you see represent the 'wave' aspect of the qubits.";
-    }
-
-    // 2. Technical Physics Knowledge
-    if (q.includes('entanglement') || q.includes('spooky')) {
-      return "Quantum entanglement is a non-local correlation where the state of one qubit cannot be described independently of the other. Einstein called it 'spooky action at a distance.' In this lab, CNOT gates are the primary mechanism for creating these links.";
-    }
-
-    if (q.includes('hadamard') || q.includes('h gate')) {
-      return "The Hadamard gate (H) is the fundamental operator for superposition. It maps the basis states |0⟩ and |1⟩ to an equal mix of both. Mathematically, it's a 90-degree rotation around the Y-axis followed by a rotation around the X-axis (or simply a rotation around the X+Z axis).";
-    }
-
-    if (q.includes('bloch') || q.includes('sphere')) {
-      return "The Bloch Sphere is a visual representation of a single qubit's state space. Every point on the sphere's surface is a pure state. Superposition states lie on the equator, while |0⟩ and |1⟩ are the poles. Entangled states can't be fully represented on a single sphere because they share information!";
-    }
-
-    if (q.includes('cnot') || q.includes('controlled')) {
-      return "CNOT (Controlled-NOT) is a 2-qubit gate. It flips the target qubit if and only if the control qubit is |1⟩. When the control is in superposition, CNOT creates entanglement, linking the futures of both qubits.";
-    }
-
-    if (q.includes('measure') || q.includes('collapse')) {
-      return "Measurement forces the quantum system to 'choose' a classical state. According to the Born Rule, the probability of an outcome is the square of its amplitude's magnitude. Once measured, the superposition is destroyed.";
-    }
-
-    // 3. Logic/Command Handling
-    if (q.includes('help') || q.includes('what can you do')) {
-      return "I can analyze your circuit in real-time, explain complex quantum phenomena, calculate probabilities, or guide you through creating Bell States. Try asking 'Explain my current entanglement' or 'What does the X gate do?'.";
-    }
-
-    if (q.includes('who made you') || q.includes('team')) {
-      return "I was developed by the QVerse project team: Shanmukheswar (Lead), Chandrika, Sritha, and Mohith. My purpose is to bridge the gap between abstract math and intuitive quantum understanding.";
-    }
-
-    if (q.includes('joke') || q.includes('funny')) {
-      return "Why can't you trust a quantum physicist? Because they're always in two states of mind... and when you check, they change their story!";
-    }
-
-    // 4. Default Intelligent Fallback
-    return "That is a profound question. In the quantum realm, such inquiries often lead to deeper understanding of wave-particle duality and non-locality. While I process that specific query, would you like me to analyze how your current amplitudes [ " + currentContext.stateVector.join(', ') + " ] relate to your circuit's complexity?";
-  };
 
   const handleSend = async () => {
     const text = inputVal.trim();
@@ -120,44 +94,57 @@ export default function AIAssistant() {
     setInputVal('');
     setIsTyping(true);
 
-    // Simulate "Neural Processing"
-    setTimeout(async () => {
-      const responseText = await generateAIResponse(text);
+    try {
+      const responseText = await getAIResponse(text, getContext(), history);
       const aiMsg: Message = { role: 'assistant', text: responseText, timestamp: new Date() };
       setMessages(prev => [...prev, aiMsg]);
+    } catch (err) {
+      console.error(err);
+      setMessages(prev => [...prev, { 
+        role: 'assistant', 
+        text: "I experienced a decoherence event while processing your request. Could you try asking that again?", 
+        timestamp: new Date() 
+      }]);
+    } finally {
       setIsTyping(false);
-    }, 800 + Math.random() * 1000);
+    }
   };
 
   const suggestions = [
-    "Analyze my current circuit",
-    "Explain entanglement",
-    "How to make a Bell State?",
-    "What is the Bloch sphere?"
+    "What is happening in my circuit?",
+    "Explain entanglement to a 5-year old",
+    "Predict my measurement outcome",
+    "How does the Hadamard gate work?"
   ];
 
   return (
-    <div className="flex flex-col h-[580px] glass-panel bg-black/40 border-cyan-500/20 overflow-hidden shadow-2xl shadow-cyan-500/10">
+    <div className="flex flex-col h-[600px] glass-panel bg-black/50 border-cyan-500/30 overflow-hidden shadow-[0_0_30px_rgba(6,182,212,0.1)] relative">
+      {/* Dynamic Background Glow */}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,_rgba(6,182,212,0.1)_0%,_transparent_70%)] pointer-events-none" />
+
       {/* Header */}
-      <div className="p-4 border-b border-gray-800 bg-gray-900/40 flex items-center justify-between">
+      <div className="p-4 border-b border-gray-800 bg-gray-900/60 backdrop-blur-md flex items-center justify-between z-10">
         <div className="flex items-center gap-3">
           <div className="relative">
-            <div className="w-10 h-10 rounded-full bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center">
-              <Brain className="w-5 h-5 text-cyan-400" />
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500/20 to-purple-500/20 border border-cyan-500/40 flex items-center justify-center">
+              <Sparkles className="w-5 h-5 text-cyan-400 animate-pulse" />
             </div>
-            <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-black animate-pulse" />
+            <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-black" />
           </div>
           <div>
-            <h3 className="text-sm font-bold text-gray-100 uppercase tracking-wider">Quantum Core AI</h3>
-            <p className="text-[10px] text-cyan-400/70 font-mono">Status: SYNCED WITH Q-ENGINE</p>
+            <h3 className="text-sm font-bold text-gray-100 uppercase tracking-widest flex items-center gap-2">
+                Quantum Tutor AI
+                <span className="text-[8px] bg-cyan-500/20 text-cyan-400 px-1.5 py-0.5 rounded border border-cyan-500/30">EXPERT</span>
+            </h3>
+            <p className="text-[9px] text-cyan-400/60 font-mono flex items-center gap-1">
+                <Zap className="w-2 h-2" /> CORE SYNCED | ADAPTIVE LEARNING ENABLED
+            </p>
           </div>
         </div>
-        <div className="flex gap-2">
-            <div className="px-2 py-1 rounded bg-gray-800 border border-gray-700 text-[9px] text-gray-400 font-mono">
-                COMPUTE: {Math.round(Math.random() * 5 + 95)}%
-            </div>
-            <div className="px-2 py-1 rounded bg-cyan-950/30 border border-cyan-500/20 text-[9px] text-cyan-400 font-mono">
-                LATENCY: 14ms
+        <div className="flex flex-col items-end">
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-cyan-950/40 border border-cyan-500/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
+                <span className="text-[9px] text-cyan-300 font-mono">Q-STATE ACTIVE</span>
             </div>
         </div>
       </div>
@@ -165,27 +152,28 @@ export default function AIAssistant() {
       {/* Messages */}
       <div 
         ref={scrollRef}
-        className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-[radial-gradient(circle_at_50%_0%,_rgba(6,182,212,0.05)_0%,_transparent_70%)]"
+        className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar relative z-10"
       >
         <AnimatePresence initial={false}>
           {messages.map((m, i) => (
             <motion.div
               key={i}
-              initial={{ opacity: 0, x: m.role === 'user' ? 20 : -20 }}
-              animate={{ opacity: 1, x: 0 }}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
               className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              <div className={`max-w-[85%] group`}>
-                <div className={`px-4 py-3 rounded-2xl text-sm shadow-lg ${
+              <div className={`max-w-[90%] flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
+                <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed shadow-xl ${
                   m.role === 'user'
-                    ? 'bg-cyan-600/20 border border-cyan-500/40 text-cyan-50 shadow-cyan-500/5 rounded-tr-none'
-                    : 'bg-gray-800/80 border border-gray-700 text-gray-100 shadow-black/20 rounded-tl-none'
+                    ? 'bg-cyan-600/30 border border-cyan-500/50 text-cyan-50 rounded-tr-none'
+                    : 'bg-gray-800/90 border border-gray-700 text-gray-100 rounded-tl-none font-medium'
                 }`}>
-                  {m.text}
+                  {m.role === 'assistant' ? <QuantumText text={m.text} /> : m.text}
                 </div>
-                <div className={`mt-1 text-[9px] text-gray-500 flex items-center gap-1 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  {m.role === 'assistant' && <Zap className="w-2 h-2 text-cyan-500" />}
+                <div className="mt-1.5 flex items-center gap-2 text-[9px] text-gray-500 font-mono px-1">
+                  {m.role === 'assistant' && <Brain className="w-2.5 h-2.5 text-cyan-500/50" />}
                   {m.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {m.role === 'assistant' && <span className="opacity-50">| ADAPTIVE RESPONSE</span>}
                 </div>
               </div>
             </motion.div>
@@ -194,26 +182,27 @@ export default function AIAssistant() {
         
         {isTyping && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-start">
-            <div className="bg-gray-800/80 px-4 py-3 rounded-2xl rounded-tl-none flex gap-1.5 items-center">
+            <div className="bg-gray-800/90 border border-gray-700 px-4 py-3 rounded-2xl rounded-tl-none flex gap-1.5 items-center">
               <span className="w-1.5 h-1.5 bg-cyan-500 rounded-full animate-bounce [animation-delay:-0.3s]" />
               <span className="w-1.5 h-1.5 bg-cyan-500 rounded-full animate-bounce [animation-delay:-0.15s]" />
               <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-bounce" />
+              <span className="ml-2 text-[10px] text-gray-400 font-mono animate-pulse">ANALYZING STATE...</span>
             </div>
           </motion.div>
         )}
       </div>
 
       {/* Footer / Input */}
-      <div className="p-4 bg-gray-900/40 border-t border-gray-800">
-        {messages.length < 4 && !isTyping && (
+      <div className="p-4 bg-gray-900/80 backdrop-blur-lg border-t border-gray-800 z-10">
+        {messages.length < 5 && !isTyping && (
           <div className="flex gap-2 mb-4 overflow-x-auto pb-2 no-scrollbar">
             {suggestions.map((s, i) => (
               <button
                 key={i}
                 onClick={() => { setInputVal(s); }}
-                className="whitespace-nowrap px-3 py-1.5 rounded-full bg-gray-800/50 border border-gray-700 text-[10px] text-gray-300 hover:border-cyan-500/50 hover:text-cyan-400 transition-all flex items-center gap-1.5"
+                className="whitespace-nowrap px-3 py-1.5 rounded-xl bg-gray-800/40 border border-gray-700 text-[10px] text-gray-400 hover:border-cyan-500/50 hover:text-cyan-300 transition-all flex items-center gap-1.5 group"
               >
-                <Info className="w-3 h-3" />
+                <Info className="w-3 h-3 group-hover:text-cyan-400" />
                 {s}
               </button>
             ))}
@@ -221,26 +210,29 @@ export default function AIAssistant() {
         )}
         
         <div className="flex gap-2">
-            <div className="relative flex-1">
+            <div className="relative flex-1 group">
                 <input
                     value={inputVal}
                     onChange={(e) => setInputVal(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                    placeholder="Inquire about the quantum state..."
-                    className="w-full bg-gray-950 border border-gray-800 focus:border-cyan-500/50 rounded-xl px-4 py-3 text-sm text-gray-100 outline-none transition-all placeholder:text-gray-600"
+                    placeholder="Ask your quantum tutor anything..."
+                    className="w-full bg-gray-950 border border-gray-800 focus:border-cyan-500/50 rounded-xl px-4 py-3.5 text-sm text-gray-100 outline-none transition-all placeholder:text-gray-600 shadow-inner"
                 />
                 <button 
                   onClick={handleSend}
                   disabled={!inputVal.trim() || isTyping}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-800 disabled:text-gray-600 text-white transition-all"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-2.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 active:scale-95 disabled:bg-gray-800 disabled:text-gray-600 text-white transition-all shadow-lg"
                 >
                     <Send className="w-4 h-4" />
                 </button>
             </div>
         </div>
-        <div className="mt-3 flex items-center justify-center gap-4 text-[9px] text-gray-600 uppercase tracking-tighter">
-            <span className="flex items-center gap-1"><History className="w-2 h-2"/> Full context enabled</span>
-            <span className="flex items-center gap-1"><Zap className="w-2 h-2"/> Real-time analysis</span>
+        <div className="mt-3 flex items-center justify-between px-1">
+            <div className="flex items-center gap-3 text-[9px] text-gray-600 uppercase tracking-tighter font-semibold">
+                <span className="flex items-center gap-1"><History className="w-2.5 h-2.5"/> Context Aware</span>
+                <span className="flex items-center gap-1"><Brain className="w-2.5 h-2.5"/> GPT-4o Enhanced</span>
+            </div>
+            <span className="text-[8px] text-gray-500 font-mono">v2.0 EXPERT TUTOR</span>
         </div>
       </div>
     </div>
