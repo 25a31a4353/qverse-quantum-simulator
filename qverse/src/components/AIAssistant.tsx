@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { useQuantumStore, GateStep } from '../store/quantumStore';
+import { useQuantumStore } from '../store/quantumStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Zap, Brain, Info, History } from 'lucide-react';
 
@@ -10,7 +10,6 @@ export default function AIAssistant() {
   const circuitSteps         = useQuantumStore(s => s.circuitSteps);
   const entanglementStrength = useQuantumStore(s => s.entanglementStrength);
   const isMeasured           = useQuantumStore(s => s.isMeasured);
-  const historyLogs          = useQuantumStore(s => s.historyLogs);
 
   const [messages, setMessages] = useState<Message[]>([
     { 
